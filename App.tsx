@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Booking, WeekOption, ModalType, SelectedSlot } from './types';
 import { TEACHERS, SUBJECTS, GRADES, PASSWORD } from './constants';
 import Header from './components/Header';
@@ -10,6 +10,7 @@ import PasswordModal from './components/PasswordModal';
 import StatsModal from './components/StatsModal';
 import AllBookingsModal from './components/AllBookingsModal';
 import ToastContainer from './components/ToastContainer';
+import { SyncStatus } from './components/CloudStatusIndicator';
 
 const App: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -21,14 +22,17 @@ const App: React.FC = () => {
     const [passwordAction, setPasswordAction] = useState<(() => void) | null>(null);
     const [toasts, setToasts] = useState<{ id: number, message: string, type: 'success' | 'error' | 'info' }[]>([]);
     const [lastAuthTimestamp, setLastAuthTimestamp] = useState<number | null>(null);
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
+    const isInitialMount = useRef(true);
+    const syncTimeoutRef = useRef<number | null>(null);
 
-    const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
             setToasts(prev => prev.filter(toast => toast.id !== id));
         }, 5000);
-    };
+    }, []);
 
     useEffect(() => {
         const storedBookings = localStorage.getItem('lrcBookings');
@@ -46,8 +50,55 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        localStorage.setItem('lrcBookings', JSON.stringify(bookings));
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+
+        if (syncStatus !== 'offline') {
+            setSyncStatus('syncing');
+            syncTimeoutRef.current = window.setTimeout(() => {
+                localStorage.setItem('lrcBookings', JSON.stringify(bookings));
+                setSyncStatus('synced');
+            }, 1200);
+        } else {
+            localStorage.setItem('lrcBookings', JSON.stringify(bookings));
+        }
+
+        return () => {
+            if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+        };
     }, [bookings]);
+    
+    useEffect(() => {
+        const handleOnline = () => {
+            addToast('تم استعادة الاتصال بالإنترنت.', 'success');
+            setSyncStatus('syncing');
+            const timer = window.setTimeout(() => {
+                setSyncStatus('synced');
+            }, 1500);
+            return () => clearTimeout(timer);
+        };
+        const handleOffline = () => {
+            addToast('تم فقدان الاتصال بالإنترنت. التغييرات ستحفظ محلياً.', 'info');
+            setSyncStatus('offline');
+        };
+        
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        if (!navigator.onLine) {
+            handleOffline();
+        }
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, [addToast]);
+
 
     const getWeekDates = (startDate: Date): Date[] => {
         const dates: Date[] = [];
@@ -210,7 +261,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-gray-100 min-h-screen text-gray-800">
             <div className="container mx-auto p-4 md:p-8">
-                <Header />
+                <Header syncStatus={syncStatus} />
                 <main className="mt-8 bg-white p-6 rounded-2xl shadow-lg">
                     <WeekSelector options={weekOptions} selectedValue={selectedWeek?.value || ''} onChange={handleWeekChange} />
                     {selectedWeek && <Timetable week={selectedWeek} bookings={bookings} onSlotClick={handleSlotClick} />}
