@@ -202,81 +202,6 @@ const App: React.FC = () => {
         }
     };
 
-    const isValidBookingArray = (data: any): data is Booking[] => {
-        if (!Array.isArray(data)) return false;
-        if (data.length > 0) {
-            const item = data[0];
-            return (
-                typeof item.id === 'string' &&
-                typeof item.day === 'string' &&
-                typeof item.period === 'number' &&
-                typeof item.teacher === 'string' &&
-                typeof item.subject === 'string' &&
-                typeof item.lesson === 'string' &&
-                typeof item.grade === 'string' &&
-                typeof item.class === 'string'
-            );
-        }
-        return true; // An empty array is valid.
-    };
-    
-    const handleExportBookings = () => {
-        try {
-            const dataStr = JSON.stringify(bookings, null, 2);
-            const dataBlob = new Blob([dataStr], { type: "application/json" });
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            const date = new Date().toISOString().split('T')[0];
-            link.download = `lrc-bookings-backup-${date}.json`;
-            link.href = url;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            addToast('تم تصدير نسخة احتياطية بنجاح.', 'success');
-        } catch (error) {
-            console.error("Failed to export bookings:", error);
-            addToast('حدث خطأ أثناء تصدير البيانات.', 'error');
-        }
-    };
-
-    const handleImportBookings = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const content = event.target?.result;
-                    if (typeof content !== 'string') throw new Error("File content is not a string.");
-                    
-                    const importedBookings = JSON.parse(content);
-                    
-                    if (!isValidBookingArray(importedBookings)) {
-                         throw new Error("Invalid file format or data structure.");
-                    }
-                    
-                    if (window.confirm('هل أنت متأكد؟ سيتم استبدال جميع الحجوزات الحالية بالبيانات الجديدة.')) {
-                        setBookings(importedBookings as Booking[]);
-                        addToast('تم استعادة النسخة الاحتياطية بنجاح.', 'success');
-                    }
-                } catch (error) {
-                    console.error("Failed to import bookings:", error);
-                    addToast('ملف غير صالح أو تالف. الرجاء اختيار ملف نسخة احتياطية صحيح.', 'error');
-                }
-            };
-            reader.onerror = () => {
-                 addToast('حدث خطأ أثناء قراءة الملف.', 'error');
-            };
-            reader.readAsText(file);
-        };
-        input.click();
-    };
-
     const currentBooking = useMemo(() => {
         if (!selectedSlot) return undefined;
         return bookings.find(b => b.day === selectedSlot.day && b.period === selectedSlot.period);
@@ -291,14 +216,6 @@ const App: React.FC = () => {
                     {selectedWeek && <Timetable week={selectedWeek} bookings={bookings} onSlotClick={handleSlotClick} />}
                 </main>
                  <footer className="mt-8 flex flex-col sm:flex-row justify-center items-center gap-4 flex-wrap">
-                    <button onClick={handleExportBookings} className="flex items-center justify-center gap-2 bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-300 transform hover:-translate-y-1">
-                        <UploadIcon />
-                        <span>حفظ نسخة احتياطية</span>
-                    </button>
-                    <button onClick={handleImportBookings} className="flex items-center justify-center gap-2 bg-sky-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-sky-700 transition-all duration-300 transform hover:-translate-y-1">
-                        <DownloadIcon />
-                        <span>استعادة نسخة احتياطية</span>
-                    </button>
                      <button onClick={() => handleProtectedAction(() => setActiveModal('all-bookings'))} className="flex items-center justify-center gap-2 bg-teal-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-teal-700 transition-all duration-300 transform hover:-translate-y-1">
                         <ListIcon />
                         <span>عرض كل الحجوزات</span>
@@ -370,7 +287,5 @@ const App: React.FC = () => {
 
 const ChartIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>;
 const ListIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>;
-const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>;
-const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
 
 export default App;
