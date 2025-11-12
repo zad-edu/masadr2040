@@ -17,7 +17,7 @@ export interface WeekOption {
   dates: Date[];
 }
 
-export type ModalType = 'booking' | 'details' | 'password' | 'stats' | 'all-bookings' | null;
+export type ModalType = 'booking' | 'details' | 'password' | 'stats' | 'all-bookings' | 'config' | null;
 
 export interface SelectedSlot {
   day: string;

@@ -9,9 +9,9 @@ import BookingDetailsModal from './components/BookingDetailsModal';
 import PasswordModal from './components/PasswordModal';
 import StatsModal from './components/StatsModal';
 import AllBookingsModal from './components/AllBookingsModal';
+import CloudConfigModal from './components/CloudConfigModal';
 import ToastContainer from './components/ToastContainer';
 import { SyncStatus } from './components/CloudStatusIndicator';
-import CloudConfigModal from './components/CloudConfigModal';
 
 const App: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -26,7 +26,6 @@ const App: React.FC = () => {
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
     const [binId, setBinId] = useState<string>('');
     const [apiKey, setApiKey] = useState<string>('');
-    const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
     const isInitialMount = useRef(true);
     const syncTimeoutRef = useRef<number | null>(null);
 
@@ -37,8 +36,17 @@ const App: React.FC = () => {
             setToasts(prev => prev.filter(toast => toast.id !== id));
         }, 5000);
     }, []);
+    
+    useEffect(() => {
+        const storedBinId = localStorage.getItem('jsonbin_bin_id');
+        const storedApiKey = localStorage.getItem('jsonbin_api_key');
+        if (storedBinId && storedApiKey) {
+            setBinId(storedBinId);
+            setApiKey(storedApiKey);
+        }
+    }, []);
 
-    const saveBookings = useCallback(async (currentBookings: Booking[], currentBinId: string, currentApiKey: string) => {
+    const saveBookings = useCallback(async (currentBookings: Booking[]) => {
         localStorage.setItem('lrcBookings', JSON.stringify(currentBookings));
     
         if (!navigator.onLine) {
@@ -47,7 +55,7 @@ const App: React.FC = () => {
             return;
         }
         
-        if (!currentBinId || !currentApiKey) {
+        if (!binId || !apiKey) {
             addToast('إعدادات السحابة غير مكتملة. تم الحفظ محلياً فقط.', 'error');
             setSyncStatus('offline');
             return;
@@ -55,11 +63,11 @@ const App: React.FC = () => {
     
         setSyncStatus('syncing');
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}`, {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Master-Key': currentApiKey,
+                    'X-Master-Key': apiKey,
                     'X-Bin-Private': 'true',
                 },
                 body: JSON.stringify(currentBookings),
@@ -96,7 +104,7 @@ const App: React.FC = () => {
                 : error.message;
             addToast(finalMessage, 'error');
         }
-    }, [addToast]);
+    }, [addToast, binId, apiKey]);
 
     const loadFromLocalStorage = useCallback(() => {
         const storedBookings = localStorage.getItem('lrcBookings');
@@ -110,7 +118,7 @@ const App: React.FC = () => {
         }
     }, []);
 
-    const fetchBookings = useCallback(async (currentBinId: string, currentApiKey: string) => {
+    const fetchBookings = useCallback(async () => {
         setSyncStatus('syncing');
         if (!navigator.onLine) {
             loadFromLocalStorage();
@@ -119,16 +127,16 @@ const App: React.FC = () => {
             return;
         }
     
-        if (!currentBinId || !currentApiKey) {
+        if (!binId || !apiKey) {
             setSyncStatus('offline');
-            addToast('إعدادات السحابة غير مكتملة.', 'error');
+            loadFromLocalStorage();
             return;
         }
         
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}/latest`, {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
                 headers: {
-                    'X-Master-Key': currentApiKey,
+                    'X-Master-Key': apiKey,
                 }
             });
     
@@ -136,14 +144,14 @@ const App: React.FC = () => {
                 if (response.status === 404) {
                     addToast('حاوية جديدة مكتشفة. جاري الإعداد الأولي...', 'info');
                     try {
-                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}`, {
+                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-Master-Key': currentApiKey,
+                                'X-Master-Key': apiKey,
                                 'X-Bin-Private': 'true',
                             },
-                            body: JSON.stringify({}), // Use an empty object for initial creation to avoid errors
+                            body: JSON.stringify([]),
                         });
     
                         if (!createResponse.ok) {
@@ -218,21 +226,17 @@ const App: React.FC = () => {
             setSyncStatus('offline');
             loadFromLocalStorage();
         }
-    }, [addToast, loadFromLocalStorage]);
+    }, [addToast, loadFromLocalStorage, binId, apiKey]);
     
     useEffect(() => {
-        const storedBinId = localStorage.getItem('jsonbin_bin_id');
-        const storedApiKey = localStorage.getItem('jsonbin_api_key');
-
-        if (storedBinId && storedApiKey) {
-            setBinId(storedBinId);
-            setApiKey(storedApiKey);
-            fetchBookings(storedBinId, storedApiKey);
-        } else {
-            setIsConfigModalOpen(true);
+        if (!binId || !apiKey) {
+            addToast('يرجى إعداد التخزين السحابي للمزامنة.', 'info');
+            setSyncStatus('offline');
             loadFromLocalStorage();
+        } else {
+            fetchBookings();
         }
-    }, [fetchBookings, loadFromLocalStorage]);
+    }, [binId, apiKey, fetchBookings, loadFromLocalStorage, addToast]);
 
     useEffect(() => {
         if (isInitialMount.current) {
@@ -242,36 +246,28 @@ const App: React.FC = () => {
         
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         
-        if (binId && apiKey) {
-            syncTimeoutRef.current = window.setTimeout(() => {
-                saveBookings(bookings, binId, apiKey);
-            }, 1500);
-        } else {
-            localStorage.setItem('lrcBookings', JSON.stringify(bookings));
-        }
+        syncTimeoutRef.current = window.setTimeout(() => {
+            saveBookings(bookings);
+        }, 1500);
 
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [bookings, saveBookings, binId, apiKey]);
+    }, [bookings, saveBookings]);
     
     useEffect(() => {
         const handleOnline = () => {
             addToast('تم استعادة الاتصال بالإنترنت. جاري مزامنة التغييرات...', 'success');
-            if (binId && apiKey) {
-                const localData = localStorage.getItem('lrcBookings');
-                if (localData) {
-                    try {
-                        const parsedBookings = JSON.parse(localData);
-                        if (Array.isArray(parsedBookings)) {
-                            saveBookings(parsedBookings, binId, apiKey);
-                        }
-                    } catch (e) {
-                        console.error("Could not sync local data on reconnect", e);
+            const localData = localStorage.getItem('lrcBookings');
+            if (localData) {
+                try {
+                    const parsedBookings = JSON.parse(localData);
+                    if (Array.isArray(parsedBookings)) {
+                        saveBookings(parsedBookings);
                     }
+                } catch (e) {
+                    console.error("Could not sync local data on reconnect", e);
                 }
-            } else {
-                addToast('الرجاء إعداد التخزين السحابي للمزامنة.', 'info');
             }
         };
         const handleOffline = () => {
@@ -286,7 +282,7 @@ const App: React.FC = () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
-    }, [addToast, saveBookings, binId, apiKey]);
+    }, [addToast, saveBookings]);
 
 
     const getWeekDates = (startDate: Date): Date[] => {
@@ -411,16 +407,6 @@ const App: React.FC = () => {
         setPasswordAction(null);
     };
     
-    const handleSaveConfig = (newBinId: string, newApiKey: string) => {
-        localStorage.setItem('jsonbin_bin_id', newBinId);
-        localStorage.setItem('jsonbin_api_key', newApiKey);
-        setBinId(newBinId);
-        setApiKey(newApiKey);
-        setIsConfigModalOpen(false);
-        addToast('تم حفظ الإعدادات بنجاح. جاري تحميل البيانات...', 'success');
-        fetchBookings(newBinId, newApiKey);
-    };
-
     const handleOpenEdit = () => {
         setActiveModal('booking');
     };
@@ -448,6 +434,20 @@ const App: React.FC = () => {
             requestPassword(action);
         }
     };
+    
+    const handleOpenSettings = () => {
+        handleProtectedAction(() => setActiveModal('config'));
+    };
+
+    const handleSaveSettings = (newBinId: string, newApiKey: string) => {
+        localStorage.setItem('jsonbin_bin_id', newBinId);
+        localStorage.setItem('jsonbin_api_key', newApiKey);
+        setBinId(newBinId);
+        setApiKey(newApiKey);
+        addToast('تم حفظ الإعدادات بنجاح! سيتم الآن مزامنة البيانات.', 'success');
+        closeModal();
+    };
+
 
     const currentBooking = useMemo(() => {
         if (!selectedSlot) return undefined;
@@ -457,7 +457,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-gray-100 min-h-screen text-gray-800">
             <div className="container mx-auto p-4 md:p-8">
-                <Header syncStatus={syncStatus} onOpenConfig={() => handleProtectedAction(() => setIsConfigModalOpen(true))} />
+                <Header syncStatus={syncStatus} onSettingsClick={handleOpenSettings} />
                 <main className="mt-8 bg-white p-6 rounded-2xl shadow-lg">
                     <WeekSelector options={weekOptions} selectedValue={selectedWeek?.value || ''} onChange={handleWeekChange} />
                     {selectedWeek && <Timetable week={selectedWeek} bookings={bookings} onSlotClick={handleSlotClick} />}
@@ -473,14 +473,6 @@ const App: React.FC = () => {
                     </button>
                 </footer>
             </div>
-            
-            <CloudConfigModal
-                isOpen={isConfigModalOpen}
-                onClose={() => setIsConfigModalOpen(false)}
-                onSave={handleSaveConfig}
-                initialBinId={binId}
-                initialApiKey={apiKey}
-            />
             
             {activeModal === 'booking' && selectedSlot && (
                 <BookingModal
@@ -532,6 +524,16 @@ const App: React.FC = () => {
                     isOpen={true}
                     onClose={closeModal}
                     bookings={bookings}
+                />
+            )}
+            
+            {activeModal === 'config' && (
+                <CloudConfigModal
+                    isOpen={true}
+                    onClose={closeModal}
+                    onSave={handleSaveSettings}
+                    initialBinId={binId}
+                    initialApiKey={apiKey}
                 />
             )}
 

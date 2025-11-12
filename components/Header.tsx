@@ -3,20 +3,28 @@ import CloudStatusIndicator, { SyncStatus } from './CloudStatusIndicator';
 
 interface HeaderProps {
     syncStatus: SyncStatus;
-    onOpenConfig: () => void;
+    onSettingsClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ syncStatus, onOpenConfig }) => {
+const Header: React.FC<HeaderProps> = ({ syncStatus, onSettingsClick }) => {
     return (
-        <header className="relative text-center bg-gradient-to-br from-teal-600 to-cyan-500 text-white p-8 rounded-2xl shadow-2xl">
+        <header 
+            className="relative text-center bg-gradient-to-br from-teal-600 to-cyan-500 text-white p-8 rounded-2xl shadow-2xl"
+        >
             <div className="absolute top-4 left-4">
                 <CloudStatusIndicator status={syncStatus} />
             </div>
             <div className="absolute top-4 right-4">
-                <button onClick={onOpenConfig} title="إعدادات السحابة" className="p-2 rounded-full hover:bg-white/20 transition-colors">
+                <button 
+                    onClick={onSettingsClick} 
+                    className="p-2 rounded-full hover:bg-white/20 transition-colors"
+                    aria-label="إعدادات التخزين السحابي"
+                    title="إعدادات التخزين السحابي"
+                >
                     <SettingsIcon />
                 </button>
             </div>
+            
             <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-300 tracking-wide">نظام حجز مركز مصادر التعلم</h1>
             <p className="text-xl md:text-2xl mt-3 font-medium text-gray-200">بمدرسة أبو عبيدة للتعليم الأساسي</p>
             <p className="text-lg md:text-xl mt-2 text-gray-300">(10 – 12)</p>
