@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Booking, WeekOption, ModalType, SelectedSlot } from './types';
-import { TEACHERS, SUBJECTS, GRADES, PASSWORD } from './constants';
+import { TEACHERS, SUBJECTS, GRADES, PASSWORD, JSONBIN_BIN_ID, JSONBIN_API_KEY } from './constants';
 import Header from './components/Header';
 import WeekSelector from './components/WeekSelector';
 import Timetable from './components/Timetable';
@@ -9,8 +9,8 @@ import BookingDetailsModal from './components/BookingDetailsModal';
 import PasswordModal from './components/PasswordModal';
 import StatsModal from './components/StatsModal';
 import AllBookingsModal from './components/AllBookingsModal';
-import CloudConfigModal from './components/CloudConfigModal';
 import ToastContainer from './components/ToastContainer';
+import CloudConfigModal from './components/CloudConfigModal';
 import { SyncStatus } from './components/CloudStatusIndicator';
 
 const App: React.FC = () => {
@@ -24,10 +24,15 @@ const App: React.FC = () => {
     const [toasts, setToasts] = useState<{ id: number, message: string, type: 'success' | 'error' | 'info' }[]>([]);
     const [lastAuthTimestamp, setLastAuthTimestamp] = useState<number | null>(null);
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
-    const [binId, setBinId] = useState<string>('');
-    const [apiKey, setApiKey] = useState<string>('');
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [cloudConfig, setCloudConfig] = useState<{ binId: string, apiKey: string }>({
+        binId: localStorage.getItem('jsonbin_bin_id') || JSONBIN_BIN_ID,
+        apiKey: localStorage.getItem('jsonbin_api_key') || JSONBIN_API_KEY,
+    });
     const isInitialMount = useRef(true);
     const syncTimeoutRef = useRef<number | null>(null);
+    const isPolling = useRef(false);
+    const savedPollCallback = useRef<() => void>();
 
     const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
         const id = Date.now();
@@ -36,14 +41,45 @@ const App: React.FC = () => {
             setToasts(prev => prev.filter(toast => toast.id !== id));
         }, 5000);
     }, []);
-    
-    useEffect(() => {
-        const storedBinId = localStorage.getItem('jsonbin_bin_id');
-        const storedApiKey = localStorage.getItem('jsonbin_api_key');
-        if (storedBinId && storedApiKey) {
-            setBinId(storedBinId);
-            setApiKey(storedApiKey);
-        }
+
+    const generateSampleDataForCurrentWeek = useCallback((): Booking[] => {
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 = Sunday
+        const currentSunday = new Date(today);
+        currentSunday.setHours(0, 0, 0, 0);
+        currentSunday.setDate(today.getDate() - dayOfWeek);
+
+        const sampleBookings: Booking[] = [];
+
+        // Sample 1: Monday, Period 2
+        const monday = new Date(currentSunday);
+        monday.setDate(currentSunday.getDate() + 1);
+        sampleBookings.push({
+            id: 'sample-' + Date.now() + '-1',
+            day: monday.toISOString().split('T')[0],
+            period: 2,
+            teacher: 'محمد بن سالم بن محمد النبهاني',
+            subject: 'اللغة العربية',
+            lesson: 'درس تجريبي في البلاغة',
+            grade: '12',
+            class: '1/12',
+        });
+
+        // Sample 2: Wednesday, Period 4
+        const wednesday = new Date(currentSunday);
+        wednesday.setDate(currentSunday.getDate() + 3);
+        sampleBookings.push({
+            id: 'sample-' + Date.now() + '-2',
+            day: wednesday.toISOString().split('T')[0],
+            period: 4,
+            teacher: 'خالد بن محمد بن سيف النبهاني (رياضة)',
+            subject: 'الرياضة المدرسية',
+            lesson: 'حصصة تدريبية لكرة القدم',
+            grade: '11',
+            class: '3/11',
+        });
+        
+        return sampleBookings;
     }, []);
 
     const saveBookings = useCallback(async (currentBookings: Booking[]) => {
@@ -55,7 +91,7 @@ const App: React.FC = () => {
             return;
         }
         
-        if (!binId || !apiKey) {
+        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
             addToast('إعدادات السحابة غير مكتملة. تم الحفظ محلياً فقط.', 'error');
             setSyncStatus('offline');
             return;
@@ -63,11 +99,11 @@ const App: React.FC = () => {
     
         setSyncStatus('syncing');
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Master-Key': apiKey,
+                    'X-Master-Key': cloudConfig.apiKey,
                     'X-Bin-Private': 'true',
                 },
                 body: JSON.stringify(currentBookings),
@@ -104,7 +140,7 @@ const App: React.FC = () => {
                 : error.message;
             addToast(finalMessage, 'error');
         }
-    }, [addToast, binId, apiKey]);
+    }, [addToast, cloudConfig]);
 
     const loadFromLocalStorage = useCallback(() => {
         const storedBookings = localStorage.getItem('lrcBookings');
@@ -115,8 +151,13 @@ const App: React.FC = () => {
                     setBookings(parsedBookings);
                 }
             } catch (e) { console.error("Failed to parse local bookings", e); }
+        } else {
+            const sampleData = generateSampleDataForCurrentWeek();
+            setBookings(sampleData);
+            localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
+            addToast('مرحباً بك! تم إضافة بيانات حجز تجريبية.', 'success');
         }
-    }, []);
+    }, [addToast, generateSampleDataForCurrentWeek]);
 
     const fetchBookings = useCallback(async () => {
         setSyncStatus('syncing');
@@ -127,16 +168,16 @@ const App: React.FC = () => {
             return;
         }
     
-        if (!binId || !apiKey) {
+        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
             setSyncStatus('offline');
             loadFromLocalStorage();
             return;
         }
         
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}/latest`, {
                 headers: {
-                    'X-Master-Key': apiKey,
+                    'X-Master-Key': cloudConfig.apiKey,
                 }
             });
     
@@ -144,14 +185,14 @@ const App: React.FC = () => {
                 if (response.status === 404) {
                     addToast('حاوية جديدة مكتشفة. جاري الإعداد الأولي...', 'info');
                     try {
-                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-Master-Key': apiKey,
+                                'X-Master-Key': cloudConfig.apiKey,
                                 'X-Bin-Private': 'true',
                             },
-                            body: JSON.stringify([]),
+                            body: JSON.stringify([]), // Create it empty first
                         });
     
                         if (!createResponse.ok) {
@@ -174,9 +215,10 @@ const App: React.FC = () => {
                             throw new Error(initErrorMessage);
                         }
                         
-                        setBookings([]);
-                        localStorage.setItem('lrcBookings', JSON.stringify([]));
-                        addToast('تم إعداد الحاوية السحابية بنجاح. ابدأ بإضافة حجز جديد.', 'success');
+                        const sampleData = generateSampleDataForCurrentWeek();
+                        setBookings(sampleData);
+                        localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
+                        addToast('تم إعداد الحاوية السحابية بنجاح! أضفنا لك بعض الحجوزات التجريبية.', 'success');
                         setSyncStatus('synced');
     
                     } catch (creationError: any) {
@@ -204,16 +246,17 @@ const App: React.FC = () => {
             const data = await response.json();
             const record = data.record;
 
-            if (Array.isArray(record)) {
+            const isEmpty = (Array.isArray(record) && record.length === 0) || 
+                            (typeof record === 'object' && record !== null && !Array.isArray(record) && Object.keys(record).length === 0);
+
+            if (isEmpty) {
+                const sampleData = generateSampleDataForCurrentWeek();
+                setBookings(sampleData);
+                localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
+                addToast('مرحباً بك! تم إضافة بيانات حجز تجريبية للبدء.', 'success');
+            } else if (Array.isArray(record)) {
                 setBookings(record);
                 localStorage.setItem('lrcBookings', JSON.stringify(record));
-                if (record.length === 0) {
-                     addToast('الحاوية السحابية فارغة. ابدأ بإضافة حجز جديد.', 'info');
-                }
-            } else if (typeof record === 'object' && Object.keys(record).length === 0) {
-                 setBookings([]);
-                 localStorage.setItem('lrcBookings', JSON.stringify([]));
-                 addToast('الحاوية السحابية فارغة. ابدأ بإضافة حجز جديد.', 'info');
             } else {
                 throw new Error('تم استلام بيانات غير متوقعة من السحابة.');
             }
@@ -226,17 +269,23 @@ const App: React.FC = () => {
             setSyncStatus('offline');
             loadFromLocalStorage();
         }
-    }, [addToast, loadFromLocalStorage, binId, apiKey]);
+    }, [addToast, loadFromLocalStorage, generateSampleDataForCurrentWeek, cloudConfig]);
     
     useEffect(() => {
-        if (!binId || !apiKey) {
-            addToast('يرجى إعداد التخزين السحابي للمزامنة.', 'info');
+        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
+            if (isInitialMount.current) {
+                addToast('مرحباً بك! يرجى إعداد التخزين السحابي أولاً.', 'info');
+                setIsConfigModalOpen(true);
+            } else {
+                addToast('إعدادات السحابة غير مكتملة. التطبيق يعمل بالوضع المحلي.', 'info');
+            }
             setSyncStatus('offline');
             loadFromLocalStorage();
         } else {
             fetchBookings();
         }
-    }, [binId, apiKey, fetchBookings, loadFromLocalStorage, addToast]);
+    }, [cloudConfig, fetchBookings, loadFromLocalStorage, addToast]);
+
 
     useEffect(() => {
         if (isInitialMount.current) {
@@ -283,6 +332,62 @@ const App: React.FC = () => {
             window.removeEventListener('offline', handleOffline);
         };
     }, [addToast, saveBookings]);
+
+    // This effect updates the polling callback on every render so it has the latest state.
+    useEffect(() => {
+        savedPollCallback.current = async () => {
+            if (isPolling.current || syncStatus === 'syncing' || !navigator.onLine) {
+                return;
+            }
+
+            if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
+                return;
+            }
+
+            isPolling.current = true;
+            try {
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}/latest`, {
+                    headers: { 'X-Master-Key': cloudConfig.apiKey }
+                });
+
+                if (!response.ok) {
+                    console.error(`Polling failed with status: ${response.status}`);
+                    return;
+                }
+
+                const data = await response.json();
+                const cloudRecord = data.record;
+
+                if (!Array.isArray(cloudRecord)) {
+                    console.error('Polled data is not in the expected format.');
+                    return;
+                }
+
+                if (JSON.stringify(cloudRecord) !== JSON.stringify(bookings)) {
+                    setBookings(cloudRecord);
+                    localStorage.setItem('lrcBookings', JSON.stringify(cloudRecord));
+                    addToast('تم تحديث البيانات تلقائياً من السحابة.', 'info');
+                    setSyncStatus('synced');
+                }
+            } catch (error) {
+                console.error("Error during polling for updates:", error);
+                 if (error instanceof Error && error.message.includes('Failed to fetch')) {
+                    setSyncStatus('offline');
+                }
+            } finally {
+                isPolling.current = false;
+            }
+        };
+    });
+
+    // This effect sets up the interval and runs only once on component mount.
+    useEffect(() => {
+        const tick = () => {
+            savedPollCallback.current?.();
+        };
+        const intervalId = setInterval(tick, 20000); // Poll every 20 seconds
+        return () => clearInterval(intervalId);
+    }, []);
 
 
     const getWeekDates = (startDate: Date): Date[] => {
@@ -435,19 +540,13 @@ const App: React.FC = () => {
         }
     };
     
-    const handleOpenSettings = () => {
-        handleProtectedAction(() => setActiveModal('config'));
+    const handleSaveConfig = (binId: string, apiKey: string) => {
+        localStorage.setItem('jsonbin_bin_id', binId);
+        localStorage.setItem('jsonbin_api_key', apiKey);
+        setCloudConfig({ binId, apiKey });
+        setIsConfigModalOpen(false);
+        addToast('تم حفظ إعدادات السحابة! جاري المزامنة...', 'success');
     };
-
-    const handleSaveSettings = (newBinId: string, newApiKey: string) => {
-        localStorage.setItem('jsonbin_bin_id', newBinId);
-        localStorage.setItem('jsonbin_api_key', newApiKey);
-        setBinId(newBinId);
-        setApiKey(newApiKey);
-        addToast('تم حفظ الإعدادات بنجاح! سيتم الآن مزامنة البيانات.', 'success');
-        closeModal();
-    };
-
 
     const currentBooking = useMemo(() => {
         if (!selectedSlot) return undefined;
@@ -457,7 +556,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-gray-100 min-h-screen text-gray-800">
             <div className="container mx-auto p-4 md:p-8">
-                <Header syncStatus={syncStatus} onSettingsClick={handleOpenSettings} />
+                <Header syncStatus={syncStatus} onOpenConfig={() => setIsConfigModalOpen(true)} />
                 <main className="mt-8 bg-white p-6 rounded-2xl shadow-lg">
                     <WeekSelector options={weekOptions} selectedValue={selectedWeek?.value || ''} onChange={handleWeekChange} />
                     {selectedWeek && <Timetable week={selectedWeek} bookings={bookings} onSlotClick={handleSlotClick} />}
@@ -527,15 +626,13 @@ const App: React.FC = () => {
                 />
             )}
             
-            {activeModal === 'config' && (
-                <CloudConfigModal
-                    isOpen={true}
-                    onClose={closeModal}
-                    onSave={handleSaveSettings}
-                    initialBinId={binId}
-                    initialApiKey={apiKey}
-                />
-            )}
+            <CloudConfigModal
+                isOpen={isConfigModalOpen}
+                onClose={() => setIsConfigModalOpen(false)}
+                onSave={handleSaveConfig}
+                initialBinId={cloudConfig.binId !== 'YOUR_BIN_ID_HERE' ? cloudConfig.binId : ''}
+                initialApiKey={cloudConfig.apiKey !== 'YOUR_API_KEY_HERE' ? cloudConfig.apiKey : ''}
+            />
 
             <ToastContainer toasts={toasts} setToasts={setToasts} />
         </div>
