@@ -1,11 +1,9 @@
-// ملاحظة: يمكنك إما استبدال القيم أدناه ببياناتك من موقع JSONBin.io،
+// ملاحظة: يمكنك إما استبدال القيمة أدناه بمعرّف npoint.io الخاص بك،
 // أو استخدام نافذة الإعدادات داخل التطبيق لربط حسابك السحابي.
 // يتم حفظ الإعدادات المدخلة عبر التطبيق في متصفحك.
 
-// استبدل 'YOUR_BIN_ID_HERE' بمعرّف الحاوية (Bin ID) الخاص بك
-export const JSONBIN_BIN_ID = "YOUR_BIN_ID_HERE"; 
-// استبدل 'YOUR_API_KEY_HERE' بمفتاح الواجهة البرمجية (X-Master-Key) الخاص بك
-export const JSONBIN_API_KEY = "YOUR_API_KEY_HERE";
+// استبدل 'YOUR_NPOINT_BIN_ID_HERE' بمعرّف الـ Bin الخاص بك من npoint.io
+export const NPOINT_BIN_ID = "YOUR_NPOINT_BIN_ID_HERE";
 
 
 export const TEACHERS = [

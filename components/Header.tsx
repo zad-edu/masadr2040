@@ -15,7 +15,11 @@ const Header: React.FC<HeaderProps> = ({ syncStatus, onOpenConfig }) => {
         >
             <div className="absolute top-4 left-4 flex items-center gap-2">
                 <CloudStatusIndicator status={syncStatus} />
-                <button onClick={onOpenConfig} title="إعدادات السحابة" className="text-white opacity-75 hover:opacity-100 transition-opacity">
+                <button 
+                    onClick={onOpenConfig} 
+                    title="إعدادات السحابة" 
+                    className={`p-1 rounded-full transition-all duration-300 ${syncStatus === 'error' ? 'bg-yellow-400 text-black animate-pulse' : 'text-white opacity-75 hover:opacity-100'}`}
+                >
                     <SettingsIcon />
                 </button>
             </div>

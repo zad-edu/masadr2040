@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Booking, WeekOption, ModalType, SelectedSlot } from './types';
-import { TEACHERS, SUBJECTS, GRADES, PASSWORD, JSONBIN_BIN_ID, JSONBIN_API_KEY } from './constants';
+import { TEACHERS, SUBJECTS, GRADES, PASSWORD, NPOINT_BIN_ID } from './constants';
 import Header from './components/Header';
 import WeekSelector from './components/WeekSelector';
 import Timetable from './components/Timetable';
@@ -25,9 +25,8 @@ const App: React.FC = () => {
     const [lastAuthTimestamp, setLastAuthTimestamp] = useState<number | null>(null);
     const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-    const [cloudConfig, setCloudConfig] = useState<{ binId: string, apiKey: string }>({
-        binId: localStorage.getItem('jsonbin_bin_id') || JSONBIN_BIN_ID,
-        apiKey: localStorage.getItem('jsonbin_api_key') || JSONBIN_API_KEY,
+    const [cloudConfig, setCloudConfig] = useState<{ binId: string }>({
+        binId: localStorage.getItem('npoint_bin_id') || NPOINT_BIN_ID,
     });
     const isInitialMount = useRef(true);
     const syncTimeoutRef = useRef<number | null>(null);
@@ -42,46 +41,6 @@ const App: React.FC = () => {
         }, 5000);
     }, []);
 
-    const generateSampleDataForCurrentWeek = useCallback((): Booking[] => {
-        const today = new Date();
-        const dayOfWeek = today.getDay(); // 0 = Sunday
-        const currentSunday = new Date(today);
-        currentSunday.setHours(0, 0, 0, 0);
-        currentSunday.setDate(today.getDate() - dayOfWeek);
-
-        const sampleBookings: Booking[] = [];
-
-        // Sample 1: Monday, Period 2
-        const monday = new Date(currentSunday);
-        monday.setDate(currentSunday.getDate() + 1);
-        sampleBookings.push({
-            id: 'sample-' + Date.now() + '-1',
-            day: monday.toISOString().split('T')[0],
-            period: 2,
-            teacher: 'محمد بن سالم بن محمد النبهاني',
-            subject: 'اللغة العربية',
-            lesson: 'درس تجريبي في البلاغة',
-            grade: '12',
-            class: '1/12',
-        });
-
-        // Sample 2: Wednesday, Period 4
-        const wednesday = new Date(currentSunday);
-        wednesday.setDate(currentSunday.getDate() + 3);
-        sampleBookings.push({
-            id: 'sample-' + Date.now() + '-2',
-            day: wednesday.toISOString().split('T')[0],
-            period: 4,
-            teacher: 'خالد بن محمد بن سيف النبهاني (رياضة)',
-            subject: 'الرياضة المدرسية',
-            lesson: 'حصصة تدريبية لكرة القدم',
-            grade: '11',
-            class: '3/11',
-        });
-        
-        return sampleBookings;
-    }, []);
-
     const saveBookings = useCallback(async (currentBookings: Booking[]) => {
         localStorage.setItem('lrcBookings', JSON.stringify(currentBookings));
     
@@ -91,50 +50,37 @@ const App: React.FC = () => {
             return;
         }
         
-        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
+        if (cloudConfig.binId.includes("YOUR_")) {
             addToast('إعدادات السحابة غير مكتملة. تم الحفظ محلياً فقط.', 'error');
-            setSyncStatus('offline');
+            setSyncStatus('error');
             return;
         }
     
         setSyncStatus('syncing');
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}`, {
-                method: 'PUT',
+            const response = await fetch(`https://api.npoint.io/${cloudConfig.binId}`, {
+                method: 'POST', // npoint.io uses POST to update
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Master-Key': cloudConfig.apiKey,
-                    'X-Bin-Private': 'true',
                 },
                 body: JSON.stringify(currentBookings),
             });
             
             if (!response.ok) {
                 let errorMessage = 'فشل الحفظ في السحابة';
-                try {
-                    const errorData = await response.json();
-                    switch(response.status) {
-                        case 401:
-                            errorMessage = 'فشل المصادقة. يرجى التحقق من مفتاح API.';
-                            break;
-                        case 404:
-                            errorMessage = 'الحاوية غير موجودة. يرجى التحقق من معرّف الحاوية (Bin ID).';
-                            break;
-                        case 422:
-                            errorMessage = `خطأ في البيانات المرسلة: ${errorData.message || 'بيانات غير صالحة'}`;
-                            break;
-                        default:
-                            errorMessage = errorData.message || `حدث خطأ غير متوقع (${response.status})`;
-                    }
-                } catch (e) {
-                    errorMessage = `حدث خطأ في الشبكة (${response.status} ${response.statusText})`;
+                if (response.status === 404) {
+                    errorMessage = 'Bin غير موجود. يرجى التحقق من معرّف npoint ID.';
+                } else {
+                    errorMessage = `حدث خطأ غير متوقع (${response.status} ${response.statusText})`;
                 }
                 throw new Error(errorMessage);
             }
             setSyncStatus('synced');
         } catch (error: any) {
             console.error("Failed to save to cloud", error);
-            setSyncStatus('offline');
+            const isConfigError = error.message.includes('Bin غير موجود');
+            setSyncStatus(isConfigError ? 'error' : 'offline');
+
             const finalMessage = error.message.includes('Failed to fetch') 
                 ? 'فشل الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت.' 
                 : error.message;
@@ -152,12 +98,10 @@ const App: React.FC = () => {
                 }
             } catch (e) { console.error("Failed to parse local bookings", e); }
         } else {
-            const sampleData = generateSampleDataForCurrentWeek();
-            setBookings(sampleData);
-            localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
-            addToast('مرحباً بك! تم إضافة بيانات حجز تجريبية.', 'success');
+            setBookings([]);
+            addToast('مرحباً بك! النظام جاهز لاستقبال الحجوزات.', 'success');
         }
-    }, [addToast, generateSampleDataForCurrentWeek]);
+    }, [addToast]);
 
     const fetchBookings = useCallback(async () => {
         setSyncStatus('syncing');
@@ -168,118 +112,66 @@ const App: React.FC = () => {
             return;
         }
     
-        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
-            setSyncStatus('offline');
+        if (cloudConfig.binId.includes("YOUR_")) {
+            setSyncStatus('error');
             loadFromLocalStorage();
             return;
         }
         
         try {
-            const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}/latest`, {
-                headers: {
-                    'X-Master-Key': cloudConfig.apiKey,
-                }
-            });
+            const response = await fetch(`https://api.npoint.io/${cloudConfig.binId}`);
     
             if (!response.ok) {
-                if (response.status === 404) {
-                    addToast('حاوية جديدة مكتشفة. جاري الإعداد الأولي...', 'info');
-                    try {
-                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Master-Key': cloudConfig.apiKey,
-                                'X-Bin-Private': 'true',
-                            },
-                            body: JSON.stringify([]), // Create it empty first
-                        });
-    
-                        if (!createResponse.ok) {
-                            let initErrorMessage = 'فشل تهيئة الحاوية السحابية';
-                             try {
-                                const errorData = await createResponse.json();
-                                switch(createResponse.status) {
-                                    case 401:
-                                        initErrorMessage = 'فشل المصادقة عند إنشاء الحاوية. يرجى التحقق من مفتاح API.';
-                                        break;
-                                    case 422:
-                                        initErrorMessage = `فشل تهيئة الحاوية: ${errorData.message || 'بيانات غير صالحة'}`;
-                                        break;
-                                    default:
-                                        initErrorMessage = errorData.message || `حدث خطأ غير متوقع (${createResponse.status})`;
-                                }
-                            } catch (e) {
-                                initErrorMessage = `حدث خطأ في الشبكة (${createResponse.status} ${createResponse.statusText})`;
-                            }
-                            throw new Error(initErrorMessage);
-                        }
-                        
-                        const sampleData = generateSampleDataForCurrentWeek();
-                        setBookings(sampleData);
-                        localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
-                        addToast('تم إعداد الحاوية السحابية بنجاح! أضفنا لك بعض الحجوزات التجريبية.', 'success');
-                        setSyncStatus('synced');
-    
-                    } catch (creationError: any) {
-                        throw new Error(creationError.message);
-                    }
-                    return;
-                }
-                
                 let errorMessage = 'فشل تحميل البيانات من السحابة';
-                 try {
-                    const errorData = await response.json();
-                    switch(response.status) {
-                        case 401:
-                            errorMessage = 'فشل المصادقة. يرجى التحقق من مفتاح API.';
-                            break;
-                        default:
-                            errorMessage = errorData.message || `حدث خطأ غير متوقع (${response.status})`;
-                    }
-                } catch(e) {
-                    errorMessage = `حدث خطأ في الشبكة (${response.status} ${response.statusText})`;
+                if (response.status === 404) {
+                     errorMessage = 'Bin غير موجود. يرجى التحقق من معرّف npoint ID.';
+                } else {
+                     errorMessage = `حدث خطأ غير متوقع (${response.status} ${response.statusText})`;
                 }
                 throw new Error(errorMessage);
             }
             
             const data = await response.json();
-            const record = data.record;
-
-            const isEmpty = (Array.isArray(record) && record.length === 0) || 
-                            (typeof record === 'object' && record !== null && !Array.isArray(record) && Object.keys(record).length === 0);
-
-            if (isEmpty) {
-                const sampleData = generateSampleDataForCurrentWeek();
-                setBookings(sampleData);
-                localStorage.setItem('lrcBookings', JSON.stringify(sampleData));
-                addToast('مرحباً بك! تم إضافة بيانات حجز تجريبية للبدء.', 'success');
-            } else if (Array.isArray(record)) {
-                setBookings(record);
-                localStorage.setItem('lrcBookings', JSON.stringify(record));
+            
+            if (!data || (Array.isArray(data) && data.length === 0)) {
+                setBookings([]);
+                localStorage.setItem('lrcBookings', JSON.stringify([]));
             } else {
-                throw new Error('تم استلام بيانات غير متوقعة من السحابة.');
+                 if (Array.isArray(data)) {
+                    setBookings(data);
+                    localStorage.setItem('lrcBookings', JSON.stringify(data));
+                } else if (data === null) {
+                    setBookings([]);
+                    localStorage.setItem('lrcBookings', JSON.stringify([]));
+                } else {
+                    throw new Error('محتوى السحابة ليس بالتنسيق المتوقع (مصفوفة).');
+                }
             }
             setSyncStatus('synced');
+
         } catch (error: any) {
             console.error("Failed to fetch or process from cloud", error);
-            addToast(error.message.includes('Failed to fetch') 
+
+            const isConfigError = /Bin غير موجود|محتوى السحابة ليس/.test(error.message);
+            setSyncStatus(isConfigError ? 'error' : 'offline');
+
+            const finalMessage = error.message.includes('Failed to fetch') 
                 ? 'فشل الاتصال بالخادم. سيتم استخدام البيانات المحلية.'
-                : error.message, 'error');
-            setSyncStatus('offline');
+                : error.message;
+            addToast(finalMessage, 'error');
             loadFromLocalStorage();
         }
-    }, [addToast, loadFromLocalStorage, generateSampleDataForCurrentWeek, cloudConfig]);
+    }, [addToast, loadFromLocalStorage, cloudConfig]);
     
     useEffect(() => {
-        if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
+        if (cloudConfig.binId.includes("YOUR_")) {
             if (isInitialMount.current) {
                 addToast('مرحباً بك! يرجى إعداد التخزين السحابي أولاً.', 'info');
                 setIsConfigModalOpen(true);
             } else {
                 addToast('إعدادات السحابة غير مكتملة. التطبيق يعمل بالوضع المحلي.', 'info');
             }
-            setSyncStatus('offline');
+            setSyncStatus('error');
             loadFromLocalStorage();
         } else {
             fetchBookings();
@@ -336,38 +228,34 @@ const App: React.FC = () => {
     // This effect updates the polling callback on every render so it has the latest state.
     useEffect(() => {
         savedPollCallback.current = async () => {
-            if (isPolling.current || syncStatus === 'syncing' || !navigator.onLine) {
+            if (isPolling.current || syncStatus === 'syncing' || syncStatus === 'error' || !navigator.onLine) {
                 return;
             }
 
-            if (cloudConfig.binId === "YOUR_BIN_ID_HERE" || cloudConfig.apiKey === "YOUR_API_KEY_HERE") {
+            if (cloudConfig.binId.includes("YOUR_")) {
                 return;
             }
 
             isPolling.current = true;
             try {
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${cloudConfig.binId}/latest`, {
-                    headers: { 'X-Master-Key': cloudConfig.apiKey }
-                });
+                const response = await fetch(`https://api.npoint.io/${cloudConfig.binId}`);
 
                 if (!response.ok) {
                     console.error(`Polling failed with status: ${response.status}`);
                     return;
                 }
 
-                const data = await response.json();
-                const cloudRecord = data.record;
-
-                if (!Array.isArray(cloudRecord)) {
-                    console.error('Polled data is not in the expected format.');
-                    return;
-                }
-
+                const cloudRecord = await response.json();
+                
                 if (JSON.stringify(cloudRecord) !== JSON.stringify(bookings)) {
-                    setBookings(cloudRecord);
-                    localStorage.setItem('lrcBookings', JSON.stringify(cloudRecord));
-                    addToast('تم تحديث البيانات تلقائياً من السحابة.', 'info');
-                    setSyncStatus('synced');
+                     if (Array.isArray(cloudRecord)) {
+                        setBookings(cloudRecord);
+                        localStorage.setItem('lrcBookings', JSON.stringify(cloudRecord));
+                        addToast('تم تحديث البيانات تلقائياً من السحابة.', 'info');
+                        setSyncStatus('synced');
+                    } else {
+                        console.error('Polled data is not in the expected array format.');
+                    }
                 }
             } catch (error) {
                 console.error("Error during polling for updates:", error);
@@ -540,10 +428,9 @@ const App: React.FC = () => {
         }
     };
     
-    const handleSaveConfig = (binId: string, apiKey: string) => {
-        localStorage.setItem('jsonbin_bin_id', binId);
-        localStorage.setItem('jsonbin_api_key', apiKey);
-        setCloudConfig({ binId, apiKey });
+    const handleSaveConfig = (binId: string) => {
+        localStorage.setItem('npoint_bin_id', binId);
+        setCloudConfig({ binId });
         setIsConfigModalOpen(false);
         addToast('تم حفظ إعدادات السحابة! جاري المزامنة...', 'success');
     };
@@ -630,8 +517,7 @@ const App: React.FC = () => {
                 isOpen={isConfigModalOpen}
                 onClose={() => setIsConfigModalOpen(false)}
                 onSave={handleSaveConfig}
-                initialBinId={cloudConfig.binId !== 'YOUR_BIN_ID_HERE' ? cloudConfig.binId : ''}
-                initialApiKey={cloudConfig.apiKey !== 'YOUR_API_KEY_HERE' ? cloudConfig.apiKey : ''}
+                initialBinId={!cloudConfig.binId.includes("YOUR_") ? cloudConfig.binId : ''}
             />
 
             <ToastContainer toasts={toasts} setToasts={setToasts} />

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type SyncStatus = 'syncing' | 'synced' | 'offline';
+export type SyncStatus = 'syncing' | 'synced' | 'offline' | 'error';
 
 interface CloudStatusIndicatorProps {
     status: SyncStatus;
@@ -18,7 +18,11 @@ const CloudStatusIndicator: React.FC<CloudStatusIndicatorProps> = ({ status }) =
         },
         offline: {
             className: 'bg-red-500',
-            title: 'أنت غير متصل',
+            title: 'غير متصل بالإنترنت أو خطأ في الشبكة',
+        },
+        error: {
+            className: 'bg-yellow-500',
+            title: 'خطأ في الإعدادات! اضغط على أيقونة الترس لإصلاحها.',
         },
     };
 
