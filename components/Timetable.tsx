@@ -55,9 +55,9 @@ const Timetable: React.FC<TimetableProps> = ({ week, bookings, onSlotClick }) =>
                                         className={`${baseCellClasses} ${cellVariantClasses}`}
                                     >
                                         {booking ? (
-                                            <div className="font-bold text-red-800">
+                                            <div className="font-bold text-red-800 text-xs sm:text-sm flex flex-col justify-center items-center h-full w-full text-center px-1">
                                                 <UserIcon />
-                                                <span>{booking.teacher}</span>
+                                                <span className="mt-1">{booking.teacher}</span>
                                             </div>
                                         ) : (
                                             <span className="font-semibold text-sky-700">متاح</span>
@@ -73,6 +73,6 @@ const Timetable: React.FC<TimetableProps> = ({ week, bookings, onSlotClick }) =>
     );
 };
 
-const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto mb-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
+const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>;
 
 export default Timetable;

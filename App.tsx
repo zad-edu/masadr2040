@@ -11,6 +11,7 @@ import StatsModal from './components/StatsModal';
 import AllBookingsModal from './components/AllBookingsModal';
 import ToastContainer from './components/ToastContainer';
 import { SyncStatus } from './components/CloudStatusIndicator';
+import CloudConfigModal from './components/CloudConfigModal';
 
 const App: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -22,7 +23,10 @@ const App: React.FC = () => {
     const [passwordAction, setPasswordAction] = useState<(() => void) | null>(null);
     const [toasts, setToasts] = useState<{ id: number, message: string, type: 'success' | 'error' | 'info' }[]>([]);
     const [lastAuthTimestamp, setLastAuthTimestamp] = useState<number | null>(null);
-    const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
+    const [binId, setBinId] = useState<string>('');
+    const [apiKey, setApiKey] = useState<string>('');
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState<boolean>(false);
     const isInitialMount = useRef(true);
     const syncTimeoutRef = useRef<number | null>(null);
 
@@ -34,7 +38,67 @@ const App: React.FC = () => {
         }, 5000);
     }, []);
 
-    useEffect(() => {
+    const saveBookings = useCallback(async (currentBookings: Booking[], currentBinId: string, currentApiKey: string) => {
+        localStorage.setItem('lrcBookings', JSON.stringify(currentBookings));
+    
+        if (!navigator.onLine) {
+            setSyncStatus('offline');
+            addToast('أنت غير متصل، تم حفظ التغييرات محلياً.', 'info');
+            return;
+        }
+        
+        if (!currentBinId || !currentApiKey) {
+            addToast('إعدادات السحابة غير مكتملة. تم الحفظ محلياً فقط.', 'error');
+            setSyncStatus('offline');
+            return;
+        }
+    
+        setSyncStatus('syncing');
+        try {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Master-Key': currentApiKey,
+                    'X-Bin-Private': 'true',
+                },
+                body: JSON.stringify(currentBookings),
+            });
+            
+            if (!response.ok) {
+                let errorMessage = 'فشل الحفظ في السحابة';
+                try {
+                    const errorData = await response.json();
+                    switch(response.status) {
+                        case 401:
+                            errorMessage = 'فشل المصادقة. يرجى التحقق من مفتاح API.';
+                            break;
+                        case 404:
+                            errorMessage = 'الحاوية غير موجودة. يرجى التحقق من معرّف الحاوية (Bin ID).';
+                            break;
+                        case 422:
+                            errorMessage = `خطأ في البيانات المرسلة: ${errorData.message || 'بيانات غير صالحة'}`;
+                            break;
+                        default:
+                            errorMessage = errorData.message || `حدث خطأ غير متوقع (${response.status})`;
+                    }
+                } catch (e) {
+                    errorMessage = `حدث خطأ في الشبكة (${response.status} ${response.statusText})`;
+                }
+                throw new Error(errorMessage);
+            }
+            setSyncStatus('synced');
+        } catch (error: any) {
+            console.error("Failed to save to cloud", error);
+            setSyncStatus('offline');
+            const finalMessage = error.message.includes('Failed to fetch') 
+                ? 'فشل الاتصال بالخادم. يرجى التحقق من اتصالك بالإنترنت.' 
+                : error.message;
+            addToast(finalMessage, 'error');
+        }
+    }, [addToast]);
+
+    const loadFromLocalStorage = useCallback(() => {
         const storedBookings = localStorage.getItem('lrcBookings');
         if (storedBookings) {
             try {
@@ -42,27 +106,146 @@ const App: React.FC = () => {
                 if (Array.isArray(parsedBookings)) {
                     setBookings(parsedBookings);
                 }
-            } catch (error) {
-                console.error("Failed to parse bookings from localStorage", error);
-                setBookings([]);
-            }
+            } catch (e) { console.error("Failed to parse local bookings", e); }
         }
     }, []);
+
+    const fetchBookings = useCallback(async (currentBinId: string, currentApiKey: string) => {
+        setSyncStatus('syncing');
+        if (!navigator.onLine) {
+            loadFromLocalStorage();
+            setSyncStatus('offline');
+            addToast('أنت غير متصل، تم تحميل البيانات المحلية.', 'info');
+            return;
+        }
+    
+        if (!currentBinId || !currentApiKey) {
+            setSyncStatus('offline');
+            addToast('إعدادات السحابة غير مكتملة.', 'error');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}/latest`, {
+                headers: {
+                    'X-Master-Key': currentApiKey,
+                }
+            });
+    
+            if (!response.ok) {
+                if (response.status === 404) {
+                    addToast('حاوية جديدة مكتشفة. جاري الإعداد الأولي...', 'info');
+                    try {
+                        const createResponse = await fetch(`https://api.jsonbin.io/v3/b/${currentBinId}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Master-Key': currentApiKey,
+                                'X-Bin-Private': 'true',
+                            },
+                            body: JSON.stringify({}), // Use an empty object for initial creation to avoid errors
+                        });
+    
+                        if (!createResponse.ok) {
+                            let initErrorMessage = 'فشل تهيئة الحاوية السحابية';
+                             try {
+                                const errorData = await createResponse.json();
+                                switch(createResponse.status) {
+                                    case 401:
+                                        initErrorMessage = 'فشل المصادقة عند إنشاء الحاوية. يرجى التحقق من مفتاح API.';
+                                        break;
+                                    case 422:
+                                        initErrorMessage = `فشل تهيئة الحاوية: ${errorData.message || 'بيانات غير صالحة'}`;
+                                        break;
+                                    default:
+                                        initErrorMessage = errorData.message || `حدث خطأ غير متوقع (${createResponse.status})`;
+                                }
+                            } catch (e) {
+                                initErrorMessage = `حدث خطأ في الشبكة (${createResponse.status} ${createResponse.statusText})`;
+                            }
+                            throw new Error(initErrorMessage);
+                        }
+                        
+                        setBookings([]);
+                        localStorage.setItem('lrcBookings', JSON.stringify([]));
+                        addToast('تم إعداد الحاوية السحابية بنجاح. ابدأ بإضافة حجز جديد.', 'success');
+                        setSyncStatus('synced');
+    
+                    } catch (creationError: any) {
+                        throw new Error(creationError.message);
+                    }
+                    return;
+                }
+                
+                let errorMessage = 'فشل تحميل البيانات من السحابة';
+                 try {
+                    const errorData = await response.json();
+                    switch(response.status) {
+                        case 401:
+                            errorMessage = 'فشل المصادقة. يرجى التحقق من مفتاح API.';
+                            break;
+                        default:
+                            errorMessage = errorData.message || `حدث خطأ غير متوقع (${response.status})`;
+                    }
+                } catch(e) {
+                    errorMessage = `حدث خطأ في الشبكة (${response.status} ${response.statusText})`;
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const data = await response.json();
+            const record = data.record;
+
+            if (Array.isArray(record)) {
+                setBookings(record);
+                localStorage.setItem('lrcBookings', JSON.stringify(record));
+                if (record.length === 0) {
+                     addToast('الحاوية السحابية فارغة. ابدأ بإضافة حجز جديد.', 'info');
+                }
+            } else if (typeof record === 'object' && Object.keys(record).length === 0) {
+                 setBookings([]);
+                 localStorage.setItem('lrcBookings', JSON.stringify([]));
+                 addToast('الحاوية السحابية فارغة. ابدأ بإضافة حجز جديد.', 'info');
+            } else {
+                throw new Error('تم استلام بيانات غير متوقعة من السحابة.');
+            }
+            setSyncStatus('synced');
+        } catch (error: any) {
+            console.error("Failed to fetch or process from cloud", error);
+            addToast(error.message.includes('Failed to fetch') 
+                ? 'فشل الاتصال بالخادم. سيتم استخدام البيانات المحلية.'
+                : error.message, 'error');
+            setSyncStatus('offline');
+            loadFromLocalStorage();
+        }
+    }, [addToast, loadFromLocalStorage]);
+    
+    useEffect(() => {
+        const storedBinId = localStorage.getItem('jsonbin_bin_id');
+        const storedApiKey = localStorage.getItem('jsonbin_api_key');
+
+        if (storedBinId && storedApiKey) {
+            setBinId(storedBinId);
+            setApiKey(storedApiKey);
+            fetchBookings(storedBinId, storedApiKey);
+        } else {
+            setIsConfigModalOpen(true);
+            loadFromLocalStorage();
+        }
+    }, [fetchBookings, loadFromLocalStorage]);
 
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
             return;
         }
-
+        
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-
-        if (syncStatus !== 'offline') {
-            setSyncStatus('syncing');
+        
+        if (binId && apiKey) {
             syncTimeoutRef.current = window.setTimeout(() => {
-                localStorage.setItem('lrcBookings', JSON.stringify(bookings));
-                setSyncStatus('synced');
-            }, 1200);
+                saveBookings(bookings, binId, apiKey);
+            }, 1500);
         } else {
             localStorage.setItem('lrcBookings', JSON.stringify(bookings));
         }
@@ -70,16 +253,26 @@ const App: React.FC = () => {
         return () => {
             if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
         };
-    }, [bookings]);
+    }, [bookings, saveBookings, binId, apiKey]);
     
     useEffect(() => {
         const handleOnline = () => {
-            addToast('تم استعادة الاتصال بالإنترنت.', 'success');
-            setSyncStatus('syncing');
-            const timer = window.setTimeout(() => {
-                setSyncStatus('synced');
-            }, 1500);
-            return () => clearTimeout(timer);
+            addToast('تم استعادة الاتصال بالإنترنت. جاري مزامنة التغييرات...', 'success');
+            if (binId && apiKey) {
+                const localData = localStorage.getItem('lrcBookings');
+                if (localData) {
+                    try {
+                        const parsedBookings = JSON.parse(localData);
+                        if (Array.isArray(parsedBookings)) {
+                            saveBookings(parsedBookings, binId, apiKey);
+                        }
+                    } catch (e) {
+                        console.error("Could not sync local data on reconnect", e);
+                    }
+                }
+            } else {
+                addToast('الرجاء إعداد التخزين السحابي للمزامنة.', 'info');
+            }
         };
         const handleOffline = () => {
             addToast('تم فقدان الاتصال بالإنترنت. التغييرات ستحفظ محلياً.', 'info');
@@ -89,15 +282,11 @@ const App: React.FC = () => {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
 
-        if (!navigator.onLine) {
-            handleOffline();
-        }
-
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
-    }, [addToast]);
+    }, [addToast, saveBookings, binId, apiKey]);
 
 
     const getWeekDates = (startDate: Date): Date[] => {
@@ -118,11 +307,9 @@ const App: React.FC = () => {
         const today = new Date();
         const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 
-        // Calculate current week's Sunday
         const currentSunday = new Date(today);
         currentSunday.setDate(today.getDate() - dayOfWeek);
         
-        // Calculate next week's Sunday
         const nextSunday = new Date(currentSunday);
         nextSunday.setDate(currentSunday.getDate() + 7);
 
@@ -147,7 +334,6 @@ const App: React.FC = () => {
         ];
         
         setWeekOptions(options);
-        setSelectedWeek(options[0]);
     }, []);
     
     const handleWeekChange = (value: string) => {
@@ -224,6 +410,16 @@ const App: React.FC = () => {
         }
         setPasswordAction(null);
     };
+    
+    const handleSaveConfig = (newBinId: string, newApiKey: string) => {
+        localStorage.setItem('jsonbin_bin_id', newBinId);
+        localStorage.setItem('jsonbin_api_key', newApiKey);
+        setBinId(newBinId);
+        setApiKey(newApiKey);
+        setIsConfigModalOpen(false);
+        addToast('تم حفظ الإعدادات بنجاح. جاري تحميل البيانات...', 'success');
+        fetchBookings(newBinId, newApiKey);
+    };
 
     const handleOpenEdit = () => {
         setActiveModal('booking');
@@ -261,7 +457,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-gray-100 min-h-screen text-gray-800">
             <div className="container mx-auto p-4 md:p-8">
-                <Header syncStatus={syncStatus} />
+                <Header syncStatus={syncStatus} onOpenConfig={() => handleProtectedAction(() => setIsConfigModalOpen(true))} />
                 <main className="mt-8 bg-white p-6 rounded-2xl shadow-lg">
                     <WeekSelector options={weekOptions} selectedValue={selectedWeek?.value || ''} onChange={handleWeekChange} />
                     {selectedWeek && <Timetable week={selectedWeek} bookings={bookings} onSlotClick={handleSlotClick} />}
@@ -277,6 +473,14 @@ const App: React.FC = () => {
                     </button>
                 </footer>
             </div>
+            
+            <CloudConfigModal
+                isOpen={isConfigModalOpen}
+                onClose={() => setIsConfigModalOpen(false)}
+                onSave={handleSaveConfig}
+                initialBinId={binId}
+                initialApiKey={apiKey}
+            />
             
             {activeModal === 'booking' && selectedSlot && (
                 <BookingModal

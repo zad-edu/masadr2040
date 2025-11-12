@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { WeekOption } from '../types';
 
@@ -19,6 +18,7 @@ const WeekSelector: React.FC<WeekSelectorProps> = ({ options, selectedValue, onC
                     onChange={(e) => onChange(e.target.value)}
                     className="block w-full bg-gray-50 border border-gray-300 text-gray-900 text-lg rounded-lg focus:ring-teal-500 focus:border-teal-500 p-3 appearance-none"
                 >
+                    <option value="" disabled>-- اختر أسبوعاً لعرض الجدول --</option>
                     {options.map(option => (
                         <option 
                             key={option.value} 

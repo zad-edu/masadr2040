@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import SubjectIcon from './SubjectIcon';
 
 interface IconDropdownProps {
     options: string[];
@@ -35,10 +34,7 @@ const IconDropdown: React.FC<IconDropdownProps> = ({ options, selectedValue, onC
                 onClick={() => setIsOpen(!isOpen)}
             >
                 {selectedValue ? (
-                    <div className="flex items-center gap-2">
-                        <SubjectIcon subject={selectedValue} />
-                        <span>{selectedValue}</span>
-                    </div>
+                    <span>{selectedValue}</span>
                 ) : (
                     <span className="text-gray-500">{placeholder}</span>
                 )}
@@ -49,10 +45,9 @@ const IconDropdown: React.FC<IconDropdownProps> = ({ options, selectedValue, onC
                     {options.map(option => (
                         <li
                             key={option}
-                            className="p-2 hover:bg-teal-100 cursor-pointer flex items-center gap-2"
+                            className="p-2 hover:bg-teal-100 cursor-pointer"
                             onClick={() => handleSelect(option)}
                         >
-                            <SubjectIcon subject={option} />
                             <span>{option}</span>
                         </li>
                     ))}

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Booking, SelectedSlot, WeekOption } from '../types';
 import SearchableDropdown from './SearchableDropdown';
+import IconDropdown from './IconDropdown';
 
 interface BookingModalProps {
     isOpen: boolean;
@@ -23,6 +24,7 @@ const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, onSubmit, 
     const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
     const [selectedClass, setSelectedClass] = useState('');
     const [validationError, setValidationError] = useState<string | null>(null);
+    const teacherInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (existingBooking) {
@@ -39,6 +41,12 @@ const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, onSubmit, 
             setSelectedClass('');
         }
         setValidationError(null);
+
+        if (isOpen) {
+            setTimeout(() => {
+                teacherInputRef.current?.focus();
+            }, 100);
+        }
     }, [existingBooking, isOpen]);
 
     useEffect(() => {
@@ -122,21 +130,25 @@ const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, onSubmit, 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="font-bold">المعلم:</label>
-                        <SearchableDropdown options={teachers} selectedValue={teacher} onChange={setTeacher} placeholder="ابحث عن اسم المعلم..." />
+                        <SearchableDropdown
+                            ref={teacherInputRef}
+                            options={teachers}
+                            selectedValue={teacher}
+                            onChange={setTeacher}
+                            placeholder="ابحث عن اسم المعلم..."
+                        />
                         {validationError && (
                             <p className="mt-2 text-sm text-red-600 bg-red-50 p-2 rounded-md">{validationError}</p>
                         )}
                     </div>
                     <div>
                         <label className="font-bold">المادة:</label>
-                         <select 
-                            value={subject} 
-                            onChange={e => setSubject(e.target.value)}
-                            className="w-full mt-1 p-2 border rounded-md bg-gray-50"
-                         >
-                             <option value="">اختر المادة...</option>
-                             {subjects.map(sub => <option key={sub} value={sub}>{sub}</option>)}
-                         </select>
+                         <IconDropdown
+                            options={subjects}
+                            selectedValue={subject}
+                            onChange={setSubject}
+                            placeholder="اختر المادة..."
+                        />
                     </div>
                     <div>
                         <label className="font-bold">عنوان الدرس:</label>

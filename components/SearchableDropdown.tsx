@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef } from 'react';
 
 interface SearchableDropdownProps {
     options: string[];
@@ -8,7 +7,7 @@ interface SearchableDropdownProps {
     placeholder?: string;
 }
 
-const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ options, selectedValue, onChange, placeholder }) => {
+const SearchableDropdown = forwardRef<HTMLInputElement, SearchableDropdownProps>(({ options, selectedValue, onChange, placeholder }, ref) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -36,6 +35,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ options, select
     return (
         <div className="relative" ref={dropdownRef}>
             <input
+                ref={ref}
                 type="text"
                 className="w-full mt-1 p-2 border rounded-md"
                 value={searchTerm || selectedValue}
@@ -69,6 +69,6 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ options, select
             )}
         </div>
     );
-};
+});
 
 export default SearchableDropdown;

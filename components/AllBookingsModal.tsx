@@ -142,7 +142,9 @@ const AllBookingsModal: React.FC<AllBookingsModalProps> = ({ isOpen, onClose, bo
                                         <td className="p-3 border-b">{new Date(booking.day).toLocaleDateString('ar-OM')}</td>
                                         <td className="p-3 border-b">{booking.period}</td>
                                         <td className="p-3 border-b">{booking.teacher}</td>
-                                        <td className="p-3 border-b">{booking.subject}</td>
+                                        <td className="p-3 border-b">
+                                            <span>{booking.subject}</span>
+                                        </td>
                                         <td className="p-3 border-b">{booking.class}</td>
                                         <td className="p-3 border-b">{booking.lesson}</td>
                                     </tr>
